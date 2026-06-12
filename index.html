@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ArtNet BLE Controller</title>
+<style>
+:root{--bg:#0f0f13;--card:#1a1a24;--acc:#00e5ff;--acc2:#7c4dff;
+      --tx:#e8e8f0;--mu:#6b6b80;--ok:#00e676;--warn:#ff6b35;--r:12px}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--tx);font-family:'Segoe UI',system-ui,sans-serif;
+     min-height:100vh}
+
+/* ===== CONNECT SCREEN ===== */
+#connectScreen{display:flex;flex-direction:column;align-items:center;
+  justify-content:center;min-height:100vh;padding:30px;text-align:center}
+.logo-big{width:80px;height:80px;background:linear-gradient(135deg,var(--acc2),#5c35cc);
+  border-radius:20px;display:flex;align-items:center;justify-content:center;
+  font-size:36px;margin:0 auto 24px;box-shadow:0 0 40px #7c4dff44}
+h1{font-size:1.6rem;font-weight:800;margin-bottom:6px}
+.sub{color:var(--mu);font-size:.9rem;margin-bottom:36px;line-height:1.6}
+#btnConnect{padding:16px 40px;background:linear-gradient(135deg,var(--acc2),#5c35cc);
+  color:#fff;border:none;border-radius:50px;font-size:1rem;font-weight:700;
+  cursor:pointer;letter-spacing:.05em;transition:transform .1s,box-shadow .2s;
+  box-shadow:0 4px 20px #7c4dff55}
+#btnConnect:hover{transform:translateY(-2px);box-shadow:0 8px 30px #7c4dff66}
+#btnConnect:active{transform:scale(.97)}
+#btnConnect:disabled{opacity:.4;cursor:not-allowed;transform:none}
+.req{margin-top:28px;background:#1a1a24;border:1px solid #2a2a3a;border-radius:var(--r);
+  padding:16px 20px;text-align:left;max-width:360px;width:100%}
+.req h3{font-size:.8rem;color:var(--acc);font-weight:700;letter-spacing:.06em;margin-bottom:10px}
+.req li{font-size:.8rem;color:var(--mu);margin-bottom:6px;padding-left:12px;position:relative;list-style:none}
+.req li::before{content:"›";position:absolute;left:0;color:var(--acc2)}
+.status-dot{display:inline-block;width:8px;height:8px;border-radius:50%;
+  background:var(--warn);margin-right:8px;animation:pulse 1.5s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+#connStatus{font-size:.85rem;color:var(--mu);margin-top:16px}
+
+/* ===== DEVICE SCREEN ===== */
+#deviceScreen{display:none}
+header{background:linear-gradient(135deg,#1a1a2e,#16213e);
+  border-bottom:2px solid var(--acc2);padding:14px 16px;
+  display:flex;align-items:center;justify-content:space-between}
+.hdr-left{display:flex;align-items:center;gap:10px}
+.logo-sm{width:32px;height:32px;background:var(--acc2);border-radius:8px;
+  display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:900;color:#fff}
+.hdr-title{font-size:1rem;font-weight:700}
+.hdr-sub{font-size:.72rem;color:var(--mu)}
+#btnDisc{padding:6px 14px;background:transparent;border:1px solid var(--warn);
+  border-radius:20px;color:var(--warn);font-size:.75rem;font-weight:700;cursor:pointer}
+
+/* Setting page dari ESP32 */
+#settingFrame{width:100%;min-height:calc(100vh - 56px);border:none;background:var(--bg)}
+
+/* ===== LOG ===== */
+#logBox{position:fixed;bottom:0;left:0;right:0;background:#0a0a10;
+  border-top:1px solid #2a2a3a;max-height:120px;overflow-y:auto;
+  font-family:monospace;font-size:.72rem;color:#6b6b80;padding:6px 10px;
+  display:none}
+#logBox span{display:block;line-height:1.6}
+#logBox .ok{color:var(--ok)}
+#logBox .err{color:var(--warn)}
+#logBox .tx{color:var(--acc)}
+
+/* ===== LOADING ===== */
+#loading{position:fixed;inset:0;background:#0f0f13ee;display:none;
+  flex-direction:column;align-items:center;justify-content:center;gap:16px;z-index:999}
+.spinner{width:48px;height:48px;border:4px solid #2a2a3a;
+  border-top-color:var(--acc2);border-radius:50%;animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+#loadMsg{color:var(--mu);font-size:.9rem}
+
+/* ===== TOAST ===== */
+#toast{position:fixed;bottom:130px;left:50%;transform:translateX(-50%);
+  background:var(--ok);color:#000;padding:10px 24px;border-radius:30px;
+  font-weight:700;font-size:.85rem;display:none;z-index:1000;white-space:nowrap}
+</style>
+</head>
+<body>
+
+<!-- CONNECT SCREEN -->
+<div id="connectScreen">
+  <div class="logo-big">&#9654;</div>
+  <h1>ArtNet BLE</h1>
+  <p class="sub">Hubungkan ke ESP32 ArtNet Node<br>via Bluetooth Low Energy</p>
+  <button id="btnConnect" onclick="connectBLE()">&#9711; Connect to ArtNet-91Pro</button>
+  <p id="connStatus"><span class="status-dot"></span>Menunggu koneksi...</p>
+  <div class="req">
+    <h3>SYARAT</h3>
+    <ul>
+      <li>Browser Chrome / Edge (Android atau Desktop)</li>
+      <li>Bluetooth aktif di HP / laptop</li>
+      <li>ESP32 sudah dinyalakan & advertising</li>
+      <li>HTTPS atau localhost (bukan file://)</li>
+    </ul>
+  </div>
+</div>
+
+<!-- DEVICE SCREEN -->
+<div id="deviceScreen">
+  <header>
+    <div class="hdr-left">
+      <div class="logo-sm">&#9654;</div>
+      <div>
+        <div class="hdr-title">ArtNet DMX Node</div>
+        <div class="hdr-sub" id="hdrSub">Terhubung via BLE</div>
+      </div>
+    </div>
+    <button id="btnDisc" onclick="disconnect()">Putus</button>
+  </header>
+  <!-- HTML dari ESP32 dirender di sini -->
+  <div id="settingContainer"></div>
+</div>
+
+<!-- LOADING -->
+<div id="loading">
+  <div class="spinner"></div>
+  <div id="loadMsg">Menghubungkan...</div>
+</div>
+
+<!-- LOG (tap 5x pojok kiri bawah untuk tampilkan) -->
+<div id="logBox"></div>
+
+<!-- TOAST -->
+<div id="toast"></div>
+
+<script>
+/* ============================================================
+   BLE UUIDs (Nordic UART Service — sama dengan ESP32)
+   ============================================================ */
+const SVC_UUID = '6e400001-b5a3-f393-e0a9-e50e24dcca9e';
+const TX_UUID  = '6e400003-b5a3-f393-e0a9-e50e24dcca9e'; // ESP32 notify → kita terima
+const RX_UUID  = '6e400002-b5a3-f393-e0a9-e50e24dcca9e'; // kita write → ESP32
+
+let device, server, txChar, rxChar;
+let htmlChunks = {}, htmlTotal = 0, htmlReceived = 0;
+let logVisible = false, logTap = 0, logTimer;
+
+/* ============================================================
+   LOG HELPER
+   ============================================================ */
+function log(msg, cls=''){
+  const box = document.getElementById('logBox');
+  const s = document.createElement('span');
+  s.className = cls;
+  s.textContent = new Date().toLocaleTimeString()+' '+msg;
+  box.appendChild(s);
+  box.scrollTop = box.scrollHeight;
+  if(box.children.length > 200) box.removeChild(box.firstChild);
+}
+
+/* tap 5× pojok kiri bawah → tampil log */
+document.addEventListener('click', e=>{
+  if(e.clientX < 60 && e.clientY > window.innerHeight-60){
+    logTap++; clearTimeout(logTimer);
+    logTimer = setTimeout(()=>logTap=0,1000);
+    if(logTap>=5){
+      logVisible=!logVisible;
+      document.getElementById('logBox').style.display=logVisible?'block':'none';
+      logTap=0;
+    }
+  }
+});
+
+/* ============================================================
+   TOAST
+   ============================================================ */
+function showToast(msg, col){
+  const t=document.getElementById('toast');
+  t.innerHTML=msg; t.style.background=col||'#00e676';
+  t.style.display='block';
+  setTimeout(()=>t.style.display='none',2000);
+}
+
+/* ============================================================
+   LOADING
+   ============================================================ */
+function showLoading(msg){
+  document.getElementById('loading').style.display='flex';
+  document.getElementById('loadMsg').textContent=msg||'Memuat...';
+}
+function hideLoading(){ document.getElementById('loading').style.display='none'; }
+
+/* ============================================================
+   CONNECT BLE
+   ============================================================ */
+async function connectBLE(){
+  if(!navigator.bluetooth){
+    alert('Web Bluetooth tidak didukung.\nGunakan Chrome/Edge dan pastikan halaman ini dibuka via HTTPS atau localhost.');
+    return;
+  }
+  document.getElementById('btnConnect').disabled=true;
+  document.getElementById('connStatus').innerHTML='<span class="status-dot"></span>Mencari device...';
+  showLoading('Mencari ArtNet-91Pro...');
+  try {
+    device = await navigator.bluetooth.requestDevice({
+      filters:[{name:'ArtNet-91Pro'}],
+      optionalServices:[SVC_UUID]
+    });
+    device.addEventListener('gattserverdisconnected', onDisconnected);
+
+    showLoading('Menghubungkan GATT...');
+    server  = await device.gatt.connect();
+    const svc = await server.getPrimaryService(SVC_UUID);
+
+    showLoading('Mengaktifkan notifikasi...');
+    txChar  = await svc.getCharacteristic(TX_UUID);
+    rxChar  = await svc.getCharacteristic(RX_UUID);
+    await txChar.startNotifications();
+    txChar.addEventListener('characteristicvaluechanged', onNotify);
+
+    showLoading('Memuat setting...');
+    log('BLE terhubung ke '+device.name,'ok');
+
+    // Tampilkan device screen
+    document.getElementById('connectScreen').style.display='none';
+    document.getElementById('deviceScreen').style.display='block';
+    document.getElementById('hdrSub').textContent='&#9679; '+device.name;
+
+    // Minta status + HTML dari ESP32
+    await bleWrite(JSON.stringify({cmd:'get'}));
+    hideLoading();
+
+  } catch(e){
+    hideLoading();
+    document.getElementById('btnConnect').disabled=false;
+    document.getElementById('connStatus').innerHTML='<span class="status-dot"></span>Gagal: '+e.message;
+    log('Error: '+e.message,'err');
+  }
+}
+
+/* ============================================================
+   DISCONNECT
+   ============================================================ */
+function disconnect(){
+  if(device && device.gatt.connected) device.gatt.disconnect();
+}
+function onDisconnected(){
+  log('BLE terputus','err');
+  document.getElementById('connectScreen').style.display='flex';
+  document.getElementById('deviceScreen').style.display='none';
+  document.getElementById('btnConnect').disabled=false;
+  document.getElementById('connStatus').innerHTML='<span class="status-dot"></span>Terputus. Coba lagi.';
+  document.getElementById('settingContainer').innerHTML='';
+  htmlChunks={}; htmlTotal=0; htmlReceived=0;
+}
+
+/* ============================================================
+   TULIS KE ESP32
+   ============================================================ */
+async function bleWrite(jsonStr){
+  if(!rxChar){ log('rxChar null','err'); return; }
+  try {
+    const enc = new TextEncoder().encode(jsonStr);
+    await rxChar.writeValueWithoutResponse(enc);
+    log('→ '+jsonStr,'tx');
+  } catch(e){ log('Write err: '+e.message,'err'); }
+}
+
+/* ============================================================
+   TERIMA NOTIFIKASI DARI ESP32
+   ============================================================ */
+function onNotify(e){
+  const raw = new TextDecoder().decode(e.target.value);
+  log('← '+raw.substring(0,120));
+  let obj;
+  try { obj=JSON.parse(raw); } catch{ return; }
+
+  if(obj.t === 'status') handleStatus(obj);
+  else if(obj.t === 'html') handleHTMLChunk(obj);
+  else if(obj.t === 'ack') showToast('&#10003; '+obj.msg);
+}
+
+/* ============================================================
+   HANDLE STATUS JSON
+   ============================================================ */
+function handleStatus(s){
+  document.getElementById('hdrSub').textContent=
+    '&#9679; '+s.device+' | '+(s.link?'Link ON':'No Link')+
+    ' | U1:'+(s.u1Act?'ACTIVE':'IDLE')+' U2:'+(s.u2Act?'ACTIVE':'IDLE');
+}
+
+/* ============================================================
+   HANDLE HTML CHUNKS
+   Rakit chunk dan render saat semua sudah diterima
+   ============================================================ */
+function handleHTMLChunk(obj){
+  const offset = obj.o, tot = obj.tot, data = obj.d;
+  htmlTotal = tot;
+  htmlChunks[offset] = data;
+  htmlReceived += data.length;
+
+  // Cek apakah semua chunk sudah diterima
+  if(htmlReceived >= htmlTotal){
+    // Rakit berdasarkan offset terurut
+    const keys = Object.keys(htmlChunks).map(Number).sort((a,b)=>a-b);
+    let full = '';
+    keys.forEach(k=> full += htmlChunks[k]);
+    renderSettingHTML(full);
+    htmlChunks={}; htmlTotal=0; htmlReceived=0;
+  }
+}
+
+/* ============================================================
+   RENDER HTML SETTING DARI ESP32
+   Inject fungsi bleWrite() agar tombol di HTML bisa kirim BLE
+   ============================================================ */
+function renderSettingHTML(html){
+  const container = document.getElementById('settingContainer');
+  // Buat shadow DOM agar style tidak bocor
+  container.innerHTML = html;
+
+  // Inject fungsi bleWrite ke dalam konteks halaman
+  // HTML dari ESP32 sudah memanggil bleWrite() — kita sediakan di window
+  window.bleWrite = async function(jsonStr){
+    await bleWrite(jsonStr);
+  };
+
+  showToast('&#10003; Setting dimuat');
+  log('HTML rendered ('+html.length+' bytes)','ok');
+  hideLoading();
+}
+
+/* ============================================================
+   CEK DUKUNGAN WEB BLUETOOTH SAAT LOAD
+   ============================================================ */
+window.addEventListener('load', ()=>{
+  if(!navigator.bluetooth){
+    document.getElementById('connStatus').innerHTML=
+      '<span style="color:var(--warn)">&#9888; Web Bluetooth tidak tersedia di browser ini.<br>Gunakan Chrome/Edge.</span>';
+    document.getElementById('btnConnect').disabled=true;
+  }
+});
+</script>
+</body>
+</html>
